@@ -1,0 +1,358 @@
+---
+title: "Tarea 4"
+author: "Saraí Belem Briones Domínguez"
+format: html
+editor: visual
+---
+
+Cargamos librerias
+```{python}
+import pandas as pd
+import numpy as np
+import scipy.stats as stats
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+import pmdarima as pm  
+from arch import arch_model  
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
+import yfinance as yf
+import pandas_datareader.data as web
+from statsmodels.tsa.filters.hp_filter import hpfilter
+from statsmodels.tsa.api import ExponentialSmoothing, SARIMAX
+from statsmodels.tsa.stattools import adfuller, acf, pacf
+import datetime
+import openpyxl
+import xlsxwriter
+import plotly.io as pio 
+sns.set_palette("Set2") 
+import warnings
+warnings.filterwarnings("ignore") 
+
+plt.style.use
+```
+
+
+##Serie
+```{python}
+
+inegi_data = pd.read_excel("./inegi_data.xlsx", parse_dates=['Periodo'])
+
+inegi_data = inegi_data[inegi_data['Periodo'].dt.year >= 2016]
+
+IPC = pd.Series(inegi_data['IPC'].values, index=inegi_data['Periodo'])
+
+print(IPC.describe())
+print(f"Fecha inicio: {MXN_ts.index.min()}, Fecha fin: {IPC.index.max()}")
+
+fig, ax = plt.subplots()
+plt.subplots_adjust(bottom=0.25)
+l, = plt.plot(IPC.index, IPC.values, lw=2)
+ax.set_title('Indice de Precios al Consumidor desde 2016')
+ax.set_xlabel('Fecha')
+ax.set_ylabel('Valor')
+
+axcolor = 'lightgoldenrodyellow'
+ax_slider = plt.axes([0.15, 0.1, 0.65, 0.03], facecolor=axcolor)
+slider = Slider(ax_slider, 'Mes Inicio', 0, len(MXN_ts)-1, valinit=0, valstep=1)
+
+def update(val):
+    pos = int(slider.val)
+  
+    start = pos
+    end = min(pos + 12, len(MXN_ts))
+    ax.set_xlim(MXN_ts.index[start], MXN_ts.index[end-1])
+    fig.canvas.draw_idle()
+
+slider.on_changed(update)
+
+plt.show()
+
+```
+##Comparación anual
+
+```{python}
+df = IPC.reset_index()
+df.columns = ['Periodo', 'Valor']
+df['Año'] = df['Periodo'].dt.year
+df['Mes'] = df['Periodo'].dt.month_name().str.slice(stop=3) 
+meses_orden = ['Enero', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Agosto', 'Sep', 'Oct', 'Nov', 'Dec']
+df['Mes'] = pd.Categorical(df['Mes'], categories=meses_orden, ordered=True)
+
+plt.figure(figsize=(12, 6))
+sns.lineplot(data=df, x='Mes', y='Valor', hue='Año', palette='Paired', marker='o')
+
+plt.title('Gráfico Estacional de los Indices de Precio al Consumidor')
+plt.ylabel('Valor')
+plt.xlabel('Mes')
+plt.legend(title='Año', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+```
+## Comparación mensual
+```{python}
+IPC = IPC.asfreq('MS')
+fig = sm.graphics.tsa.month_plot(IPC)
+plt.suptitle('Gráfico Estacional Tipo "Cycle" - Comparación Mensual')
+plt.show()
+
+```
+
+##Boxplot trimestral
+```{python}
+
+inegi_data['Periodo'] = pd.to_datetime(inegi_data['Periodo'])
+inegi_data['Trimestre'] = inegi_data['Periodo'].dt.to_period('Q')  
+
+
+inegi_data['Año'] = inegi_data['Periodo'].dt.year.astype(str)
+plt.figure(figsize=(12, 6))
+sns.boxplot(data=inegi_data, x='Trimestre', y='IPC', hue='Año', palette='Paired')
+
+plt.title('Boxplot Trimestral del Indice de precios al Consumir')
+plt.xlabel('Trimestre')
+plt.ylabel('Valor')
+plt.xticks(rotation=45)
+plt.legend(title='Año', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+```
+##Headmat
+```{python}
+
+df = IPC.reset_index()
+df.columns = ['Periodo', 'Valor']
+df['Año'] = df['Periodo'].dt.year
+df['Mes'] = df['Periodo'].dt.month_name().str.slice(stop=3) 
+heatmap_data = df.pivot(index='Mes', columns='Año', values='Valor')
+meses_orden = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+heatmap_data = heatmap_data.reindex(meses_orden)
+
+plt.figure(figsize=(10, 8))
+sns.heatmap(heatmap_data, cmap='Spectral', linewidths=0.5, linecolor='gray', annot=True, fmt=".2f")
+
+plt.title('Heatmap de Indice de Precios al Consumidof')
+plt.ylabel('Mes')
+plt.xlabel('Año')
+plt.tight_layout()
+plt.show()
+
+```
+
+## Surface
+```{python}
+df = IPC.reset_index()
+df.columns = ['Periodo', 'Valor']
+df['Año'] = df['Periodo'].dt.year
+df['Mes'] = df['Periodo'].dt.month
+
+surface_data = df.pivot(index='Mes', columns='Año', values='Valor')
+X = surface_data.columns.values
+Y = surface_data.index.values
+X, Y = np.meshgrid(X, Y)
+Z = surface_data.values
+
+fig = plt.figure(figsize=(12, 8))
+ax = fig.add_subplot(111, projection='3d')
+
+surf = ax.plot_surface(X, Y, Z, cmap='viridis', edgecolor='k')
+
+ax.set_xlabel('Año')
+ax.set_ylabel('Mes')
+ax.set_zlabel('Valor')
+ax.set_yticks(Y)
+ax.set_yticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+
+fig.colorbar(surf, shrink=0.5, aspect=10)
+plt.title('Gráfico de Superficie de Indice de Precios al Consumidor')
+plt.show()
+
+```
+# Estadísticas de una serie temporal
+
+## Media muestral
+```{python}
+
+media_muestral = IPC.mean()
+print("La media muestral es:", media_muestral)
+
+```
+
+## Varianza muestral 
+```{python}
+varianza_muestral = IPC.var()
+print("Varianza muestral:", varianza_muestral)
+
+```
+### Autocorrelación
+```{python}
+plot_acf(IPC, lags=10)
+plt.title('Función de Autocorrelación (ACF)')
+plt.show()
+
+```
+##Lags
+```{python}
+
+lags = 10
+df_lags = pd.DataFrame({'Original': IPC})
+
+for i in range(1, lags + 1):
+    df_lags[f'Lag_{i}'] = IPC.shift(i)
+
+print(df_lags.head(10))
+
+```
+##Estacionariedad
+```{python}
+from statsmodels.tsa.stattools import adfuller
+
+resultado = adfuller(IPC.dropna()) 
+
+print('ADF Statistic:', resultado[0])
+print('p-value:', resultado[1])
+print('Número de retardos usados:', resultado[2])
+print('Número de observaciones usadas para la regresión:', resultado[3])
+print('Valores críticos:')
+for key, value in resultado[4].items():
+    print(f'   {key}: {value}')
+
+if resultado[1] < 0.05:
+    print("Rechazamos la hipótesis nula: la serie es estacionaria.")
+else:
+    print("No se puede rechazar la hipótesis nula: la serie no es estacionaria.")
+
+```
+## Diferenciación
+```{python}
+IPC_diff = IPC.diff().dropna()
+
+fig, ax = plt.subplots()
+plt.subplots_adjust(bottom=0.25)
+
+line, = ax.plot(IPC_diff.index, IPC_diff.values, lw=2)
+ax.set_title('Serie Diferenciada (1er orden) de Indice de Precios al Consumidor')
+ax.set_xlabel('Fecha')
+ax.set_ylabel('Diferencia')
+
+axcolor = 'lightgoldenrodyellow'
+ax_slider = plt.axes([0.15, 0.1, 0.65, 0.03], facecolor=axcolor)
+slider = Slider(ax_slider, 'Inicio', 0, len(IPC_diff)-12, valinit=0, valstep=1)
+
+def update(val):
+    pos = int(slider.val)
+    ax.set_xlim(IPC_diff.index[pos], IPC_diff.index[pos+11])
+    fig.canvas.draw_idle()
+
+slider.on_changed(update)
+
+plt.show()
+
+resultado_adf = adfuller(IPC_diff)
+
+print('ADF Statistic:', resultado_adf[0])
+print('p-value:', resultado_adf[1])
+print('Número de retardos usados:', resultado_adf[2])
+print('Número de observaciones usadas para la regresión:', resultado_adf[3])
+print('Valores críticos:')
+for key, value in resultado_adf[4].items():
+    print(f'   {key}: {value}')
+
+if resultado_adf[1] < 0.05:
+    print("Rechazamos la hipótesis nula: la serie diferenciada es estacionaria.")
+else:
+    print("No se puede rechazar la hipótesis nula: la serie diferenciada no es estacionaria.")
+
+```
+# Descomposición  {.tabset}
+##Serie original
+```{python}
+
+IPC = IPC.asfreq('MS')
+
+result = seasonal_decompose(IPC, model='additive')
+
+
+result.plot()
+plt.suptitle('Descomposición de la Serie Original')
+plt.show()
+
+IPC_diff = IPC.diff().dropna()
+result_diff = seasonal_decompose(IPC_diff, model='additive')
+result_diff.plot()
+plt.suptitle('Descomposición de la Serie Diferenciada')
+plt.show()
+
+```
+## Serie diferenciada
+```{python}
+from statsmodels.tsa.ar_model import AutoReg
+
+model = AutoReg(MXN_ts.dropna(), lags=5, old_names=False)
+model_fit = model.fit()
+
+print(model_fit.summary())
+
+```
+# AutoRegresión {.tabset}
+
+## Coeficientes
+```{python}
+
+model = AutoReg(IPC.dropna(), lags=5, old_names=False)
+model_fit = model.fit()
+
+print("Coeficientes del modelo AR:")
+print(model_fit.params)
+
+```
+## Gráfica
+```{python}
+
+residuos = model_fit.resid
+fitted_values = MXN_ts.dropna() - residuos  # MXN_ts - residuos
+
+df_plot = pd.DataFrame({
+    'MXN': MXN_ts,
+    'MXN_fitted': fitted_values
+}).dropna()
+
+plt.figure(figsize=(12,6))
+plt.plot(df_plot.index, df_plot['MXN'], label='MXN Original')
+plt.plot(df_plot.index, df_plot['MXN_fitted'], label='MXN Ajustado (Fitted)')
+plt.title('Serie Original y Ajustada (Original - Residuos)')
+plt.xlabel('Fecha')
+plt.ylabel('Valor')
+plt.legend()
+plt.show()
+
+```
+## Residuos
+```{python}
+
+fig = sm.graphics.plot_regress_exog(model_fit, 'lag_1')  
+
+sm.qqplot(residuos, line='s')
+plt.title('Q-Q Plot de Residuos')
+plt.show()
+
+```
+## Forecast
+
+```{python}
+from statsmodels.tsa.ar_model import AutoReg
+
+model = AutoReg(IPC.dropna(), lags=5, old_names=False)
+model_fit = model.fit()
+print(model_fit.summary())
+
+```
+
+
